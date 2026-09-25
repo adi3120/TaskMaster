@@ -2,6 +2,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBuilder } from "./builder-run.js";
+import { runPlanner } from "./planner-run.js";
 import {
   attachDemo,
   crashAgent,
@@ -34,11 +35,14 @@ Usage
   taskmaster demo crash <role>
   taskmaster demo stop
   taskmaster run --agent builder "Create FILE.md containing exactly: text"
+  taskmaster plan "Build Tic Tac Toe"
   taskmaster help
 
 taskmaster and taskmaster doctor scan this machine and print lane status.
 taskmaster demo opens a tmux session. Planner, tester, validator, and documenter stay mocked.
 taskmaster run replaces the builder pane with OpenCode and always passes --model.
+taskmaster plan runs the planner pane, validates the plan, then runs one ready builder task.
+Tester, validator, and documenter stay mocked. A valid plan is saved without an extra confirmation.
 Detach with the tmux prefix, then run taskmaster attach to return.
 `;
 
@@ -73,6 +77,9 @@ export async function main(argv: string[], io: CliIo = {
     if (command === "run") {
       return runCommand(argv.slice(1), io, cwd, env);
     }
+    if (command === "plan") {
+      return planCommand(argv.slice(1), io, cwd, env);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     io.stderr(`taskmaster ${command} failed: ${message}\n`);
@@ -106,6 +113,21 @@ async function runCommand(argv: string[], io: CliIo, cwd: string, env: NodeJS.Pr
   io.stdout(
     `Builder run ${result.runId}\nmodel ${result.model}\ntmux ${result.sessionName}\nverified ${result.createdFile ?? "git change"}\n`,
   );
+  return 0;
+}
+
+async function planCommand(argv: string[], io: CliIo, cwd: string, env: NodeJS.ProcessEnv): Promise<number> {
+  const goal = argv.join(" ").trim();
+  if (!goal) {
+    io.stderr("Usage: taskmaster plan \"goal\"\n");
+    return 2;
+  }
+  const result = await runPlanner({ cwd, env, attach: false }, goal);
+  io.stdout(result.summary);
+  io.stdout(`model ${result.model}\ntmux ${result.sessionName}\nrun ${result.runId}\n`);
+  if (result.builder) {
+    io.stdout(`builder task ${result.builder.taskId} verified\n`);
+  }
   return 0;
 }
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-Phase 0 through Phase 3 are in this tree. Phase 4 has not started.
+Phase 0 through Phase 4 are in this tree. The full five-agent pipeline has not started.
 
 ## Phase 0 — Upstream extraction
 
@@ -47,17 +47,26 @@ Done for the Builder only.
 - Planner, tester, validator, and documenter stay mock processes
 - The run checks the git working tree before it is marked complete
 
-## Phase 4 — Five-agent team
+## Phase 4 — Planner and task DAG
 
-- role skills under `skills/<role>/SKILL.md`
-- prompt assembly: goal, skill, task, memory, dependency results, recent events
-- tmux panes bound to those roles
+Done for the Planner, plus one ready Builder task.
 
-## Phase 5 — Planning and task DAG
+- `taskmaster plan "Build Tic Tac Toe"`
+- Planner runtime is OpenCode with `agents.planner.model`
+- A missing Planner model fails before launch
+- The Planner skill is `skills/planner/SKILL.md`
+- TaskMaster validates a version 1 `ProjectPlan` before inserting tasks
+- An invalid plan is rejected as a whole and recorded as `PLAN_REJECTED`
+- Temporary planner ids are mapped to TaskMaster task ids
+- Tasks with no unfinished dependencies are `READY`
+- After a valid plan, TaskMaster runs one ready Builder task and stops
+- Tester, validator, and documenter stay mocked
 
-- planner returns validated structured tasks, dependencies, acceptance criteria, and a target role
-- reject prose that does not validate
-- scheduler runs tasks in `READY`
+## Phase 5 — Remaining agents
+
+- make tester, validator, and documenter real
+- run the rest of a persisted DAG in dependency order
+- keep one active builder task at a time
 
 ## Phase 6 — Test, validate, rework
 

@@ -11,10 +11,12 @@ export interface TaskMasterConfig {
   enabledRuntimes: string[];
   agents: {
     builder?: AgentAssignment;
+    planner?: AgentAssignment;
   };
 }
 
 export const BUILDER_OPENCODE_MODEL = "opencode/nemotron-3.5-lightning-free";
+export const PLANNER_OPENCODE_MODEL = "opencode/nemotron-3.5-lightning-free";
 
 export const DEFAULT_CONFIG: TaskMasterConfig = {
   version: 1,
@@ -23,6 +25,10 @@ export const DEFAULT_CONFIG: TaskMasterConfig = {
     builder: {
       runtime: "opencode",
       model: BUILDER_OPENCODE_MODEL,
+    },
+    planner: {
+      runtime: "opencode",
+      model: PLANNER_OPENCODE_MODEL,
     },
   },
 };
@@ -43,24 +49,42 @@ export function parseConfig(raw: string): TaskMasterConfig {
     typeof record.agents === "object" && record.agents !== null
       ? (record.agents as Record<string, unknown>)
       : {};
-  const builderRaw = agentsRecord.builder;
-  let builder: AgentAssignment | undefined;
-  if (typeof builderRaw === "object" && builderRaw !== null) {
-    const builderRecord = builderRaw as Record<string, unknown>;
-    builder = {
-      runtime: typeof builderRecord.runtime === "string" ? builderRecord.runtime : "",
-      model: typeof builderRecord.model === "string" ? builderRecord.model : "",
-    };
-  }
-  return { version: 1, enabledRuntimes: enabled, agents: builder ? { builder } : {} };
+  const builder = readAssignment(agentsRecord.builder);
+  const planner = readAssignment(agentsRecord.planner);
+  return {
+    version: 1,
+    enabledRuntimes: enabled,
+    agents: {
+      ...(builder ? { builder } : {}),
+      ...(planner ? { planner } : {}),
+    },
+  };
+}
+
+function readAssignment(value: unknown): AgentAssignment | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  return {
+    runtime: typeof record.runtime === "string" ? record.runtime : "",
+    model: typeof record.model === "string" ? record.model : "",
+  };
 }
 
 export function requireBuilderOpenCodeModel(config: TaskMasterConfig): string {
-  const assignment = config.agents.builder;
+  return requireRoleOpenCodeModel(config, "builder");
+}
+
+export function requirePlannerOpenCodeModel(config: TaskMasterConfig): string {
+  return requireRoleOpenCodeModel(config, "planner");
+}
+
+function requireRoleOpenCodeModel(config: TaskMasterConfig, role: "builder" | "planner"): string {
+  const assignment = config.agents[role];
   const model = assignment?.model.trim() ?? "";
   if (assignment?.runtime !== "opencode" || model.length === 0) {
+    const label = role === "builder" ? "Builder" : "Planner";
     throw new Error(
-      'Builder OpenCode model is not configured. Set agents.builder.runtime to "opencode" and agents.builder.model. TaskMaster will not use OpenCode\'s remembered model.',
+      `${label} OpenCode model is not configured. Set agents.${role}.runtime to "opencode" and agents.${role}.model. TaskMaster will not use OpenCode's remembered model.`,
     );
   }
   return model;
@@ -71,13 +95,16 @@ export async function loadConfig(home: string): Promise<TaskMasterConfig> {
   try {
     const raw = await fs.readFile(file, "utf8");
     const parsed = parseConfig(raw);
-    if (!parsed.agents.builder) {
+    if (!parsed.agents.builder || !parsed.agents.planner) {
       const filled: TaskMasterConfig = {
         ...parsed,
         enabledRuntimes: parsed.enabledRuntimes.includes("opencode")
           ? parsed.enabledRuntimes
           : [...parsed.enabledRuntimes, "opencode"],
-        agents: { builder: DEFAULT_CONFIG.agents.builder },
+        agents: {
+          builder: parsed.agents.builder ?? DEFAULT_CONFIG.agents.builder,
+          planner: parsed.agents.planner ?? DEFAULT_CONFIG.agents.planner,
+        },
       };
       await saveConfig(home, filled);
       return filled;

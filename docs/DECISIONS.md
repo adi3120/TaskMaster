@@ -60,6 +60,10 @@ The agents window holds planner, builder, tester, and validator. The support win
 
 Phase 3 runs only the builder against OpenCode. Every launch includes `--model` from `agents.builder.model`. The value is `opencode/nemotron-3.5-lightning-free`. There is no `--continue` and no reliance on OpenCode's last selected model. An empty model is an error. The same string is stored on `runs.model`. The other four roles stay on the mock agent.
 
+## D18 — Planner output is validated before it becomes tasks
+
+The Planner uses the same OpenCode command as the Builder, with `agents.planner.model` passed as `--model`. The initial model is `opencode/nemotron-3.5-lightning-free`. The Planner may write only `.taskmaster/inbox/plan.json`. TaskMaster parses that file as a version 1 `ProjectPlan`, rejects the whole plan when validation fails, and inserts tasks in one transaction. Planner temp ids are not database keys. A valid plan is saved without a second confirmation. `taskmaster plan` then executes one `READY` builder task and stops. Tester, validator, and documenter stay mocked.
+
 ## D16 — Demo project fallback
 
 Doctor still requires a git root to name a project. `taskmaster demo` uses the git root when it exists, and otherwise the current directory basename and absolute path, so a not-yet-initialized repo can still open a session.

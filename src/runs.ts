@@ -21,7 +21,7 @@ export function insertRun(
   input: {
     projectId: string;
     agentId: string;
-    taskId: string;
+    taskId: string | null;
     runtimeId: string;
     model: string;
     status: string;

@@ -9,10 +9,11 @@ import { getExecution, upsertExecution } from "./executions.js";
 import { databasePath, ensureHome, taskmasterHome } from "./paths.js";
 import { resolveDemoProject, upsertProject } from "./project.js";
 import { buildOpenCodeRunCommand, fileRequestedByPrompt, sessionIdFromOutput } from "./opencode-command.js";
-import { resolveOnPath } from "./runtimes/detect.js";
+import { resolveOpenCodeBin, runOpenCodePane } from "./opencode-pane.js";
 import { finishRun, insertRun, saveSession } from "./runs.js";
-import { claimTask, createTask } from "./tasks.js";
-import { capturePane, hasSession, listPanes, resizeWindow, respawnPane, selectPaneTitle } from "./tmux.js";
+import { promoteReady } from "./plan-store.js";
+import { claimTask, createTask, getTask } from "./tasks.js";
+import { hasSession } from "./tmux.js";
 
 export interface BuilderRunResult {
   taskId: string;
@@ -29,7 +30,7 @@ export async function runBuilder(ctx: DemoContext, prompt: string): Promise<Buil
   await ensureHome(home);
   const config = await loadConfig(home);
   const model = requireBuilderOpenCodeModel(config);
-  const bin = await resolveOpenCode(ctx.env);
+  const bin = await resolveOpenCodeBin(ctx.env);
   const command = buildOpenCodeRunCommand({ bin, model, prompt });
   const project = await resolveDemoProject(ctx.cwd);
   const gitRoot = await git(project.root, ["rev-parse", "--show-toplevel"]).catch(() => null);
@@ -102,18 +103,21 @@ export async function runBuilder(ctx: DemoContext, prompt: string): Promise<Buil
     exitCode: null,
     pid: null,
   });
-  if (execution.tmuxSession) {
-    await resizeWindow(`${execution.tmuxSession}:agents`, 220, 50, ctx.env);
-  }
-  await respawnPane(execution.tmuxPaneId, root, command, ctx.env);
-  await selectPaneTitle(execution.tmuxPaneId, "builder", ctx.env);
   closeDatabase(db);
 
   const timeoutMs = Number(ctx.env.TASKMASTER_RUN_TIMEOUT_MS ?? 180000);
-  const pane = await waitForPaneExit(execution.tmuxSession ?? "", execution.tmuxPaneId, ctx.env, timeoutMs);
-  const output = await capturePane(execution.tmuxPaneId, ctx.env);
+  const pane = await runOpenCodePane({
+    session: execution.tmuxSession ?? "",
+    paneId: execution.tmuxPaneId,
+    cwd: root,
+    command,
+    role: "builder",
+    env: ctx.env,
+    timeoutMs,
+  });
+  const output = pane.output;
   const sessionKey = sessionIdFromOutput(output);
-  const exitCode = pane?.exitCode ?? null;
+  const exitCode = pane.exitCode;
   const createdFile = requestedFile ? path.join(root, requestedFile) : null;
   const fileExists = createdFile ? await fs.access(createdFile).then(() => true).catch(() => false) : false;
   const after = await git(root, ["status", "--porcelain"]);
@@ -176,12 +180,126 @@ export async function runBuilder(ctx: DemoContext, prompt: string): Promise<Buil
   }
 }
 
-async function resolveOpenCode(env: NodeJS.ProcessEnv): Promise<string> {
-  const override = env.TASKMASTER_OPENCODE_BIN?.trim();
-  if (override) return override;
-  const found = await resolveOnPath("opencode", env.PATH ?? "");
-  if (!found) throw new Error("OpenCode is not installed. Install the opencode CLI before taskmaster run.");
-  return found;
+export async function runReadyBuilderTask(ctx: DemoContext, projectRoot: string): Promise<BuilderRunResult | null> {
+  const home = taskmasterHome(ctx.env);
+  const config = await loadConfig(home);
+  const model = requireBuilderOpenCodeModel(config);
+  const bin = await resolveOpenCodeBin(ctx.env);
+  const db = openDatabase(databasePath(home));
+  const projectId = upsertProject(db, { name: path.basename(projectRoot), root: projectRoot });
+  const ready = db.prepare(
+    `SELECT id FROM tasks WHERE project_id = ? AND status = 'READY' AND owner_agent_id = 'builder' ORDER BY created_at LIMIT 1`,
+  ).get(projectId) as { id: string } | undefined;
+  if (!ready) {
+    closeDatabase(db);
+    return null;
+  }
+  const task = getTask(db, ready.id);
+  const execution = getExecution(db, projectId, "builder");
+  if (!execution?.tmuxPaneId || !(await hasSession(execution.tmuxSession ?? "", ctx.env))) {
+    closeDatabase(db);
+    throw new Error("Builder pane is missing. Start the demo session again.");
+  }
+  claimTask(db, task.id, "builder");
+  const prompt = [
+    "Implement only this task. Do not start later tasks.",
+    "",
+    task.title,
+    "",
+    task.description,
+  ].join("\n");
+  const command = buildOpenCodeRunCommand({ bin, model, prompt });
+  const before = await git(projectRoot, ["status", "--porcelain"]);
+  const startedAt = new Date().toISOString();
+  const run = insertRun(db, {
+    projectId,
+    agentId: "builder",
+    taskId: task.id,
+    runtimeId: "opencode",
+    model,
+    status: "RUNNING",
+    startedAt,
+  });
+  appendEvent(db, {
+    projectId,
+    agentId: "builder",
+    taskId: task.id,
+    type: "RUN_STARTED",
+    summary: `Builder run started for ${task.title}`,
+    payload: { model },
+  });
+  appendEvent(db, {
+    projectId,
+    agentId: "builder",
+    taskId: task.id,
+    type: "RUNTIME_STARTED",
+    summary: `OpenCode started with ${model}`,
+    payload: { model, runtime: "opencode" },
+  });
+  appendEvent(db, {
+    projectId,
+    agentId: "builder",
+    taskId: task.id,
+    type: "TASK_STARTED",
+    summary: task.title,
+  });
+  closeDatabase(db);
+  const timeoutMs = Number(ctx.env.TASKMASTER_RUN_TIMEOUT_MS ?? 180000);
+  const pane = await runOpenCodePane({
+    session: execution.tmuxSession ?? "",
+    paneId: execution.tmuxPaneId,
+    cwd: projectRoot,
+    command,
+    role: "builder",
+    env: ctx.env,
+    timeoutMs,
+  });
+  const after = await git(projectRoot, ["status", "--porcelain"]);
+  const verified = pane.exitCode === 0 && porcelainAdded(before, after).length > 0;
+  const done = openDatabase(databasePath(home));
+  try {
+    finishRun(done, run.id, {
+      status: verified ? "completed" : "failed",
+      exitCode: pane.exitCode,
+      sessionKey: sessionIdFromOutput(pane.output),
+    });
+    done.prepare("UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?").run(
+      verified ? "DONE" : "FAILED",
+      verified ? `Verified change with ${model}` : "OpenCode run did not produce a verified git change",
+      new Date().toISOString(),
+      task.id,
+    );
+    if (verified) promoteReady(done, projectId);
+    appendEvent(done, {
+      projectId,
+      agentId: "builder",
+      taskId: task.id,
+      type: verified ? "RUN_COMPLETED" : "RUN_FAILED",
+      summary: verified ? `Builder verified ${task.title}` : `Builder failed ${task.title}`,
+      payload: { model, exitCode: pane.exitCode },
+    });
+    appendEvent(done, {
+      projectId,
+      agentId: "builder",
+      taskId: task.id,
+      type: verified ? "TASK_COMPLETED" : "TASK_FAILED",
+      summary: task.title,
+    });
+    if (!verified) {
+      throw new Error(`Builder task "${task.title}" failed verification (exit ${pane.exitCode ?? "unknown"}).`);
+    }
+    return {
+      taskId: task.id,
+      runId: run.id,
+      model,
+      sessionName: execution.tmuxSession ?? "",
+      exitCode: pane.exitCode,
+      verified,
+      createdFile: null,
+    };
+  } finally {
+    closeDatabase(done);
+  }
 }
 
 function git(cwd: string, args: string[]): Promise<string> {
@@ -201,21 +319,3 @@ function porcelainAdded(before: string, after: string): string[] {
   return after.split("\n").map((line) => line.trim()).filter((line) => line.length > 0 && !prior.has(line));
 }
 
-async function waitForPaneExit(
-  session: string,
-  paneId: string,
-  env: NodeJS.ProcessEnv,
-  timeoutMs: number,
-): Promise<{ exitCode: number | null; pid: number | null } | null> {
-  const started = Date.now();
-  let sawAlive = false;
-  while (Date.now() - started < timeoutMs) {
-    const panes = await listPanes(session, env);
-    const pane = panes.find((item) => item.paneId === paneId);
-    if (!pane) return null;
-    if (!pane.dead) sawAlive = true;
-    if (pane.dead && (sawAlive || Date.now() - started > 500)) return pane;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(`Builder pane ${paneId} did not exit within ${timeoutMs}ms`);
-}
