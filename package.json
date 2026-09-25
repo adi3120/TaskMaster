@@ -1,0 +1,23 @@
+{
+  "name": "taskmaster",
+  "version": "0.1.0",
+  "private": true,
+  "description": "tmux-first orchestrator for a fixed five-agent coding team",
+  "type": "module",
+  "bin": {
+    "taskmaster": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "taskmaster": "node --experimental-strip-types src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
