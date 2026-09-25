@@ -100,7 +100,7 @@ Each event has id, timestamp, project, agent, task, type, summary, and an option
 
 tmux owns the agent process. `taskmaster demo` asks tmux to create the session, windows, and panes, then `respawn-pane` runs the command. The control plane stores the pane id, window, command, pid, exit code, and lifecycle in `agent_executions`. Liveness is `pane_dead`, `pane_dead_status`, and `pane_pid`. Pane text is only captured for a person to read. It is not parsed into state.
 
-A later real runtime replaces the mock command string stored on the execution row. The same pane, claim, and event path stays.
+The builder pane is the exception in Phase 3. `taskmaster run --agent builder` respawns that pane with `opencode run --model <agents.builder.model>`. The model string is stored on the run row. The other four panes stay on the mock agent.
 
 There is no automatic restart. `taskmaster demo restart <role>` respawns that pane once and increments `restart_count`.
 

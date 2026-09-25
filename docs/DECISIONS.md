@@ -56,6 +56,10 @@ The agents window holds planner, builder, tester, and validator. The support win
 
 `taskmaster demo restart <role>` respawns one pane and increments `restart_count`. Nothing restarts an agent in a loop.
 
+## D17 — Builder OpenCode model is explicit
+
+Phase 3 runs only the builder against OpenCode. Every launch includes `--model` from `agents.builder.model`. The value is `opencode/nemotron-3.5-lightning-free`. There is no `--continue` and no reliance on OpenCode's last selected model. An empty model is an error. The same string is stored on `runs.model`. The other four roles stay on the mock agent.
+
 ## D16 — Demo project fallback
 
 Doctor still requires a git root to name a project. `taskmaster demo` uses the git root when it exists, and otherwise the current directory basename and absolute path, so a not-yet-initialized repo can still open a session.

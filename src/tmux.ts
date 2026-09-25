@@ -118,7 +118,7 @@ async function paneId(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
 
 export async function createDemoLayout(session: string, env: NodeJS.ProcessEnv = process.env): Promise<DemoLayout> {
   const planner = await paneId(
-    ["new-session", "-d", "-s", session, "-n", "agents", "-P", "-F", "#{pane_id}"],
+    ["new-session", "-d", "-s", session, "-n", "agents", "-x", "220", "-y", "50", "-P", "-F", "#{pane_id}"],
     env,
   );
   const builder = await paneId(["split-window", "-h", "-t", planner, "-P", "-F", "#{pane_id}"], env);
@@ -139,6 +139,8 @@ export async function createDemoLayout(session: string, env: NodeJS.ProcessEnv =
     await tmuxEnv(["set-window-option", "-t", `${session}:${window}`, "pane-border-format", " #{pane_title} "], env);
     await tmuxEnv(["set-window-option", "-t", `${session}:${window}`, "remain-on-exit", "on"], env);
   }
+  await resizeWindow(`${session}:agents`, 220, 50, env);
+  await resizeWindow(`${session}:support`, 220, 50, env);
   await tmuxEnv(["select-window", "-t", `${session}:agents`], env);
   return layout;
 }
@@ -153,6 +155,15 @@ export async function listPanes(session: string, env: NodeJS.ProcessEnv = proces
 
 export async function selectPaneTitle(paneIdValue: string, title: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
   await tmuxEnv(["select-pane", "-t", paneIdValue, "-T", title], env);
+}
+
+export async function resizeWindow(
+  target: string,
+  width: number,
+  height: number,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  await tmuxEnv(["resize-window", "-t", target, "-x", String(width), "-y", String(height)], env);
 }
 
 export async function respawnPane(

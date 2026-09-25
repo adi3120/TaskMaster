@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const AGENT_ROLES = ["planner", "builder", "tester", "validator", "documenter"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS runs (
   agent_id TEXT REFERENCES agents(id),
   task_id TEXT REFERENCES tasks(id),
   runtime_id TEXT,
+  model TEXT,
   status TEXT NOT NULL,
   started_at TEXT NOT NULL,
   finished_at TEXT,
@@ -139,6 +140,7 @@ export function openDatabase(file: string): DatabaseSync {
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
+  ensureRunModelColumn(db);
   const version = db.prepare("SELECT version FROM schema_meta LIMIT 1").get() as
     | { version: number }
     | undefined;
@@ -154,6 +156,13 @@ export function openDatabase(file: string): DatabaseSync {
 export async function restrictDatabaseFile(file: string): Promise<void> {
   if (file === ":memory:") return;
   await fs.chmod(file, 0o600).catch(() => undefined);
+}
+
+function ensureRunModelColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "model")) {
+    db.exec("ALTER TABLE runs ADD COLUMN model TEXT");
+  }
 }
 
 function seedAgents(db: DatabaseSync): void {

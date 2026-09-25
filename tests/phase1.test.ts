@@ -94,7 +94,7 @@ describe("cli", () => {
 
   it("rejects unknown commands", async () => {
     let error = "";
-    const code = await main(["run"], {
+    const code = await main(["nope"], {
       stdout: () => undefined,
       stderr: (text) => {
         error += text;

@@ -1,6 +1,6 @@
 # Roadmap
 
-Phase 0, Phase 1, and the Phase 2 tmux demo are in this tree. Phase 3 has not started.
+Phase 0 through Phase 3 are in this tree. Phase 4 has not started.
 
 ## Phase 0 — Upstream extraction
 
@@ -37,11 +37,15 @@ Still no model calls.
 
 ## Phase 3 — One real agent
 
-- `taskmaster run --agent builder "Create HELLO.md"`
-- one detected runtime, streamed into the builder pane
-- persist run and session params
-- confirm the filesystem change
-- emit a completion event
+Done for the Builder only.
+
+- `taskmaster run --agent builder "..."`
+- Builder runtime is OpenCode, invoked as `opencode run --model <configured-model>`
+- Configured model is `opencode/nemotron-3.5-lightning-free`
+- A missing model fails the run. OpenCode's remembered model is not used
+- The model is stored on the run row
+- Planner, tester, validator, and documenter stay mock processes
+- The run checks the git working tree before it is marked complete
 
 ## Phase 4 — Five-agent team
 

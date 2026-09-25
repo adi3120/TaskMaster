@@ -21,7 +21,8 @@ export const runtimeSessionCodec: SessionCodec = {
       readString(record.sessionId) ?? readString(record.session_id) ?? readString(record.sessionID);
     if (!sessionId) return null;
     const cwd = readString(record.cwd) ?? readString(record.workdir);
-    return { sessionId, ...(cwd ? { cwd } : {}) };
+    const model = readString(record.model);
+    return { sessionId, ...(cwd ? { cwd } : {}), ...(model ? { model } : {}) };
   },
   serialize(params) {
     if (!params) return null;
