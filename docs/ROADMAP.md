@@ -1,6 +1,6 @@
 # Roadmap
 
-Phase 0 and the Phase 1 doctor scaffold are in this tree. Later phases are not started.
+Phase 0, Phase 1, and the Phase 2 tmux demo are in this tree. Phase 3 has not started.
 
 ## Phase 0 — Upstream extraction
 
@@ -24,13 +24,16 @@ Not in this phase: agent prompts, the scheduler, or a live model call.
 
 ## Phase 2 — tmux execution prototype
 
-- `taskmaster demo` opens `taskmaster-<project>` with five named panes
-- mock processes in each pane
-- capture pane output, notice a dead process, restart it
-- attach and detach
-- a status/log window
+Done for the mock-agent demo.
 
-Still no model calls. tmux remains a view over the control plane.
+- `taskmaster demo` opens or reuses `taskmaster-<project>`
+- agents window: planner, builder, tester, validator
+- support window: documenter and the event log
+- SQLite `agent_executions` records lifecycle, pane id, pid, exit, and restart count
+- `taskmaster status`, `taskmaster demo crash <role>`, `taskmaster demo restart <role>`, `taskmaster demo stop`, `taskmaster attach`
+- tmux owns the child process; liveness comes from pane probes
+
+Still no model calls.
 
 ## Phase 3 — One real agent
 

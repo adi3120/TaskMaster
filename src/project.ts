@@ -14,6 +14,14 @@ export async function detectProject(cwd: string): Promise<DetectedProject | null
   return { name: path.basename(root), root };
 }
 
+/** Demo identity. Git root when present, otherwise the current directory. */
+export async function resolveDemoProject(cwd: string): Promise<DetectedProject> {
+  const detected = await detectProject(cwd);
+  if (detected) return detected;
+  const root = path.resolve(cwd);
+  return { name: path.basename(root) || "project", root };
+}
+
 export function upsertProject(db: DatabaseSync, project: DetectedProject): string {
   const existing = db.prepare("SELECT id FROM projects WHERE root_path = ?").get(project.root) as
     | { id: string }

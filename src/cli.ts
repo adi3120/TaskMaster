@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  attachDemo,
+  crashAgent,
+  formatDemoStatus,
+  isAgentRole,
+  reconcileDemo,
+  restartAgent,
+  startDemo,
+  stopDemo,
+} from "./demo.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
 
 export interface CliIo {
@@ -15,10 +25,18 @@ const HELP = `TaskMaster
 Usage
   taskmaster
   taskmaster doctor
+  taskmaster demo
+  taskmaster status
+  taskmaster attach
+  taskmaster demo status
+  taskmaster demo restart <role>
+  taskmaster demo crash <role>
+  taskmaster demo stop
   taskmaster help
 
 taskmaster and taskmaster doctor scan this machine and print lane status.
-They do not start agents.
+taskmaster demo opens a tmux session with five mock agents. It does not call a model.
+Detach with the tmux prefix, then run taskmaster attach to return.
 `;
 
 export async function main(argv: string[], io: CliIo = {
@@ -30,19 +48,69 @@ export async function main(argv: string[], io: CliIo = {
     io.stdout(HELP);
     return 0;
   }
-  if (command !== "doctor") {
-    io.stderr(`Unknown command "${command}".\n\n${HELP}`);
-    return 2;
-  }
+  const cwd = io.cwd ?? process.cwd();
+  const env = io.env ?? process.env;
   try {
-    const report = await runDoctor({ cwd: io.cwd, env: io.env });
-    io.stdout(formatDoctorReport(report));
-    return report.ok ? 0 : 1;
+    if (command === "doctor") {
+      const report = await runDoctor({ cwd, env });
+      io.stdout(formatDoctorReport(report));
+      return report.ok ? 0 : 1;
+    }
+    if (command === "status") {
+      io.stdout(formatDemoStatus(await reconcileDemo({ cwd, env })));
+      return 0;
+    }
+    if (command === "attach") {
+      await attachDemo({ cwd, env });
+      return 0;
+    }
+    if (command === "demo") {
+      return demoCommand(argv.slice(1), io, cwd, env);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    io.stderr(`taskmaster doctor failed: ${message}\n`);
+    io.stderr(`taskmaster ${command} failed: ${message}\n`);
     return 1;
   }
+  io.stderr(`Unknown command "${command}".\n\n${HELP}`);
+  return 2;
+}
+
+async function demoCommand(
+  argv: string[],
+  io: CliIo,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
+  const sub = argv[0];
+  const attach = Boolean(process.stdout.isTTY) && !env.TASKMASTER_NO_ATTACH;
+  if (!sub) {
+    const status = await startDemo({ cwd, env, attach });
+    if (!attach) io.stdout(formatDemoStatus(status));
+    return 0;
+  }
+  if (sub === "status") {
+    io.stdout(formatDemoStatus(await reconcileDemo({ cwd, env })));
+    return 0;
+  }
+  if (sub === "stop") {
+    io.stdout(formatDemoStatus(await stopDemo({ cwd, env })));
+    return 0;
+  }
+  if (sub === "restart" || sub === "crash") {
+    const role = argv[1] ?? "";
+    if (!isAgentRole(role)) {
+      io.stderr(`Expected a role: planner, builder, tester, validator, documenter.\n`);
+      return 2;
+    }
+    const status = sub === "restart"
+      ? await restartAgent({ cwd, env }, role)
+      : await crashAgent({ cwd, env }, role);
+    io.stdout(formatDemoStatus(status));
+    return 0;
+  }
+  io.stderr(`Unknown demo command "${sub}".\n\n${HELP}`);
+  return 2;
 }
 
 const entry = process.argv[1] ? path.resolve(process.argv[1]) : "";

@@ -40,6 +40,26 @@ Persisted session params must round-trip through `runtimeSessionCodec`. Unknown 
 
 Cross-agent communication is an append-only `events` row. Role prompts will receive a filtered tail. There is no standing multi-agent chat in the control plane.
 
+## D12 — tmux owns the demo process
+
+Phase 2 uses model A: tmux launches the pane command and is the parent. TaskMaster records pane identity and reconciles `pane_dead` / `pane_pid`. It does not spawn a second copy of the agent and pipe it into the pane. Replacing `mock-agent` with a real CLI later means changing the command string, not the ownership model.
+
+## D13 — Agent lifecycle is not task status
+
+`agent_executions.lifecycle` is `CREATED`, `STARTING`, `RUNNING`, `EXITED`, `CRASHED`, or `RESTARTING`. Task rows keep the Phase 1 task states. A crashed mock agent is not a failed task.
+
+## D14 — Two tmux windows
+
+The agents window holds planner, builder, tester, and validator. The support window holds documenter and the event log. One six-pane window is too small on a laptop. Session name stays `taskmaster-<project>`.
+
+## D15 — Manual restart only
+
+`taskmaster demo restart <role>` respawns one pane and increments `restart_count`. Nothing restarts an agent in a loop.
+
+## D16 — Demo project fallback
+
+Doctor still requires a git root to name a project. `taskmaster demo` uses the git root when it exists, and otherwise the current directory basename and absolute path, so a not-yet-initialized repo can still open a session.
+
 ## D11 — Child-process helper is the only Phase 1 port
 
 `src/process/run-process.ts` adapts Paperclip's local `runChildProcess` behavior (timeout, grace kill, streaming, capture cap, Claude nesting env). It is marked in `NOTICE`. No other Paperclip source file is copied.

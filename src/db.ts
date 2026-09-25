@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const AGENT_ROLES = ["planner", "builder", "tester", "validator", "documenter"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
@@ -104,6 +104,33 @@ CREATE TABLE IF NOT EXISTS providers (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS demo_sessions (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id),
+  tmux_session TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  log_pane_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_executions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  agent_id TEXT NOT NULL REFERENCES agents(id),
+  lifecycle TEXT NOT NULL,
+  tmux_session TEXT,
+  tmux_window TEXT,
+  tmux_pane_id TEXT,
+  command TEXT,
+  pid INTEGER,
+  started_at TEXT,
+  exited_at TEXT,
+  exit_code INTEGER,
+  restart_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  UNIQUE(project_id, agent_id)
+);
 `;
 
 export function openDatabase(file: string): DatabaseSync {
@@ -117,6 +144,8 @@ export function openDatabase(file: string): DatabaseSync {
     | undefined;
   if (!version) {
     db.prepare("INSERT INTO schema_meta (version) VALUES (?)").run(SCHEMA_VERSION);
+  } else if (version.version < SCHEMA_VERSION) {
+    db.prepare("UPDATE schema_meta SET version = ?").run(SCHEMA_VERSION);
   }
   seedAgents(db);
   return db;

@@ -19,7 +19,7 @@ tmux session taskmaster-<project>
    └── documenter / event log
 ```
 
-Phase 1 implements the control plane far enough for `taskmaster doctor`. It does not start agents.
+Phase 1 implements `taskmaster doctor`. Phase 2 adds `taskmaster demo`, which runs mock agents in tmux. It does not call a model.
 
 ## Roles
 
@@ -96,11 +96,38 @@ Each event has id, timestamp, project, agent, task, type, summary, and an option
 
 `src/process/run-process.ts` runs a local command. Doctor uses it for `--version` probes. Later phases use it to launch runtimes inside tmux panes, with the same timeout and death handling.
 
-The tmux controller can name `taskmaster-<project>`, create a detached session, and tell whether that session exists. Doctor only checks that tmux itself runs. Pane layout is Phase 2.
+## Process ownership
+
+tmux owns the agent process. `taskmaster demo` asks tmux to create the session, windows, and panes, then `respawn-pane` runs the command. The control plane stores the pane id, window, command, pid, exit code, and lifecycle in `agent_executions`. Liveness is `pane_dead`, `pane_dead_status`, and `pane_pid`. Pane text is only captured for a person to read. It is not parsed into state.
+
+A later real runtime replaces the mock command string stored on the execution row. The same pane, claim, and event path stays.
+
+There is no automatic restart. `taskmaster demo restart <role>` respawns that pane once and increments `restart_count`.
+
+## Demo layout
+
+Two windows, because six panes on one laptop screen are too small:
+
+- `agents`: planner, builder, tester, validator in a 2x2 grid
+- `support`: documenter and the TaskMaster event log
+
+The log pane tails the SQLite event table. It is a view, not a second bus.
 
 ## Lifecycle
 
-TaskMaster is event-driven. The useful slice of Paperclip's heartbeat, without schedules:
+Agent runtime lifecycle is separate from task status.
+
+`CREATED → STARTING → RUNNING → EXITED` or `CRASHED`. A manual restart passes through `RESTARTING` and back to `RUNNING`.
+
+`taskmaster status` prints that lifecycle from SQLite after a tmux liveness probe.
+
+## Boundaries
+
+`taskmaster` and `taskmaster doctor` scan lanes and exit. `taskmaster demo` starts mock agents only. Detach with tmux, then `taskmaster attach` returns to the same session name. A second `taskmaster demo` reuses that session instead of creating `taskmaster-<project>-1`.
+
+## Later heartbeat
+
+TaskMaster stays event-driven. The useful slice of Paperclip's heartbeat, without schedules, is still later work:
 
 1. Wake because the user submitted a goal or a task became ready.
 2. Inspect the assignment, memory, and recent events.
@@ -111,7 +138,3 @@ TaskMaster is event-driven. The useful slice of Paperclip's heartbeat, without s
 7. Delegate by creating child tasks, not child agents.
 8. Update task status.
 9. Exit. The control plane waits for the next event.
-
-## Boundaries
-
-In Phase 1 the CLI commands are `taskmaster` and `taskmaster doctor`. Both print the doctor report and exit. They do not attach tmux and they do not call a model.
